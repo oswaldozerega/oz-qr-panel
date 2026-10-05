@@ -120,8 +120,9 @@ main { min-width: 0; padding-block: 22px 48px; padding-inline: clamp(16px, 3vw, 
 .page-head .lead { color: var(--muted); max-width: 62ch; }
 .head-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
-.demo-note { display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; border-radius: var(--r-md); background: var(--warn-soft); color: var(--fg); font-size: .85rem; margin-bottom: 18px; border: 1px solid transparent; }
+.demo-note { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; padding: 10px 14px; border-radius: var(--r-md); background: var(--warn-soft); color: var(--fg); font-size: .85rem; margin-bottom: 18px; border: 1px solid transparent; }
 .demo-note .ic { color: var(--warn); flex: none; margin-top: 2px; }
+.demo-note > span { flex: 1 1 220px; }
 
 /* Controls */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 16px; border-radius: var(--r-md); border: 1px solid var(--line); background: var(--glass-strong); font-weight: 600; cursor: pointer; white-space: nowrap; transition: transform .12s ease, background .15s ease; }
@@ -629,12 +630,17 @@ fieldset.bare legend { padding: 0; margin-bottom: 6px; }
 
 /* ───────────────────────── Constants ───────────────────────── */
 
-const APP_VERSION = '0.2.1';
+const APP_VERSION = '0.3.0';
 const LOGO = 'logo-oz.png';
 const PANEL_URL = 'Panel de control de Wix › OZ QR Code Generator';
 const DEFAULT_SHORT_BASE = 'oswaldozerega.com/q/';
 
 const CHANGELOG = [
+  { version: '0.3.0', date: '2026-10-05', items: [
+    'País, provincia y ciudad de cada escaneo (MaxMind GeoLite); la IP se borra apenas se ubica.',
+    'Usuarios únicos reales: un mismo teléfono cuenta una vez por día, sin guardar datos personales.',
+    'El botón «Actualizar» de la analítica ubica los escaneos pendientes y recarga los datos.'
+  ] },
   { version: '0.2.1', date: '2026-10-05', items: [
     'Logos y avatares: se quitan los márgenes vacíos al subirlos y llenan el círculo de la página.'
   ] },
@@ -681,8 +687,8 @@ const CHANGELOG = [
 
 const ROADMAP = [
   { v: '0.1', t: 'Prototipo del panel', d: 'Diseño, flujo y generador funcional con datos locales.', s: 'done' },
-  { v: '0.2', t: 'Conexión con Wix', d: 'Redirector en oswaldozerega.com/q/, escaneos reales, páginas de destino, archivos en Wix y panel privado.', s: 'now' },
-  { v: '0.3', t: 'Ubicación de los escaneos', d: 'País y ciudad de cada escaneo, usuarios únicos e informes con datos reales.', s: 'next' }
+  { v: '0.2', t: 'Conexión con Wix', d: 'Redirector en oswaldozerega.com/q/, escaneos reales, páginas de destino, archivos en Wix y panel privado.', s: 'done' },
+  { v: '0.3', t: 'Ubicación de los escaneos', d: 'País y ciudad de cada escaneo, usuarios únicos e informes con datos reales.', s: 'now' }
 ];
 
 const ICONS = {
@@ -1293,7 +1299,8 @@ async function recargarEscaneos() {
   const idPorSlug = new Map(state.codes.map((c) => [c.slug, c.id]));
   state.events = (filas || []).filter((f) => idPorSlug.has(f.slug)).map((f) => ({
     codeId: idPorSlug.get(f.slug), ts: new Date(f.fecha).getTime(), device: f.dispositivo || 'Otros',
-    country: f.pais || 'Sin ubicación', city: f.ciudad || 'Sin ubicación', region: f.region || ''
+    country: f.pais || (f.ubicado ? 'Desconocido' : 'Por ubicar'), city: f.ciudad || (f.ubicado ? 'Desconocida' : 'Por ubicar'), region: f.region || '',
+    visitor: f.visitante || ''
   }));
   scanCache.clear();
 }
@@ -1809,6 +1816,9 @@ function computeAnalytics(codes, days, endDate = today()) {
     countries: new Map(), cities: new Map(), devices: new Map(), heat: Array.from({ length: 7 }, () => new Array(24).fill(0)), perCode: [] };
   for (let i = 0; i < days; i++) res.labels.push(addDays(start, i));
   const add = (map, key, v, extra) => { const e = map.get(key) || { ...extra, v: 0 }; e.v += v; map.set(key, e); };
+  // Usuario único = mismo teléfono el mismo día (el servidor guarda un identificador anónimo que cambia cada día).
+  const vistos = new Set();
+  const esNuevo = (periodo, dia, ev) => { if (!ev.visitor) return true; const k = `${periodo}|${dia}|${ev.visitor}`; if (vistos.has(k)) return false; vistos.add(k); return true; };
 
   for (const code of codes) {
     if (code.mode !== 'dynamic') continue;
@@ -1837,14 +1847,14 @@ function computeAnalytics(codes, days, endDate = today()) {
       const when = new Date(ev.ts);
       const i = diffDays(when, start);
       if (i >= 0 && i < days) {
-        res.cur[i] += 1; res.curU[i] += 1; cur += 1;
+        res.cur[i] += 1; if (esNuevo('c', i, ev)) res.curU[i] += 1; cur += 1;
         res.heat[when.getDay()][when.getHours()] += 1;
         add(res.countries, ev.country, 1, { name: ev.country });
         add(res.cities, `${ev.city}|${ev.country}`, 1, { city: ev.city, region: ev.region, country: ev.country });
         add(res.devices, ev.device, 1, { name: ev.device });
       } else {
         const j = diffDays(when, pstart);
-        if (j >= 0 && j < days) { res.prev[j] += 1; res.prevU[j] += 1; prev += 1; }
+        if (j >= 0 && j < days) { res.prev[j] += 1; if (esNuevo('p', j, ev)) res.prevU[j] += 1; prev += 1; }
       }
     }
     res.perCode.push({ code, cur, prev });
@@ -2968,7 +2978,7 @@ function renderAnalytics() {
         <button class="btn btn-primary" data-action="to-report">${icon('report')}Crear informe</button>
       </div>
     </header>
-    <p class="demo-note">${icon('info')}<span>Escaneos reales registrados en tu sitio. El <b>país y la ciudad</b> llegan en la siguiente fase; por ahora aparecen como «Sin ubicación». Los usuarios únicos se cuentan como escaneos hasta entonces.</span>${hasDemo ? '' : ''}<button class="btn btn-sm" data-action="reload-scans" style="margin-left:auto">${icon('scan')}Actualizar</button></p>
+    <p class="demo-note">${icon('info')}<span>Escaneos reales de tu sitio. El país y la ciudad se calculan cada hora (o al pulsar <b>Actualizar</b>); mientras tanto aparecen «Por ubicar». Un usuario único es un mismo teléfono en un mismo día.</span><button class="btn btn-sm" data-action="reload-scans" style="margin-left:auto">${icon('scan')}Actualizar</button></p>
     <div class="filters glass">
       <div class="field"><label for="an-target">Cliente o código</label><select class="input" id="an-target" data-an="target">${targetOptions(anFilter.target)}</select></div>
       <div class="field"><label for="an-days">Periodo</label><select class="input" id="an-days" data-an="days">${periodOptions(anFilter.days)}</select></div>
@@ -4582,7 +4592,14 @@ function handleAction(action, el) {
       break;
     case 'reload-scans':
       el.disabled = true;
-      conWix(() => recargarEscaneos(), 'No se pudieron leer los escaneos.').then((ok) => { render(); if (ok) toast('Escaneos actualizados.'); });
+      (async () => {
+        let aviso = '';
+        try { const r = await Remoto.llamar('actualizarUbicaciones'); if (r.pendientes) aviso = ` Quedan ${r.pendientes} por ubicar (se completan cada hora).`; }
+        catch (err) { aviso = ` ${err.message}`; }
+        const ok = await conWix(() => recargarEscaneos(), 'No se pudieron leer los escaneos.');
+        render();
+        if (ok) toast(`Escaneos actualizados.${aviso}`, aviso && !aviso.startsWith(' Quedan') ? 'error' : undefined);
+      })();
       break;
     case 'copy-link': if (code) { copyText(shortUrl(code)); closeMenu(); } break;
     case 'duplicate':
