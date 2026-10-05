@@ -430,7 +430,7 @@ fieldset.bare legend { padding: 0; margin-bottom: 6px; }
 .lp-id.no-avatar { margin-top: 12px; }
 .lp-avatar { width: 68px; height: 68px; border-radius: 50%; background: #fff; border: 3px solid #fff; box-shadow: 0 4px 12px rgba(0,0,0,.15); overflow: hidden; display: grid; place-items: center; font-family: var(--font-display); font-weight: 700; font-size: 1.3rem; }
 .lp-avatar img { width: 100%; height: 100%; object-fit: cover; }
-.lp-avatar.logo img { object-fit: contain; padding: 5px; }
+.lp-avatar.logo img { object-fit: contain; }
 .lp-id strong { font-family: var(--font-display); font-size: 1.02rem; line-height: 1.25; }
 .lp-id span { font-size: .76rem; opacity: .8; }
 .lp-ic { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; flex: none; overflow: hidden; }
@@ -629,12 +629,15 @@ fieldset.bare legend { padding: 0; margin-bottom: 6px; }
 
 /* ───────────────────────── Constants ───────────────────────── */
 
-const APP_VERSION = '0.2.0';
+const APP_VERSION = '0.2.1';
 const LOGO = 'logo-oz.png';
 const PANEL_URL = 'Panel de control de Wix › OZ QR Code Generator';
 const DEFAULT_SHORT_BASE = 'oswaldozerega.com/q/';
 
 const CHANGELOG = [
+  { version: '0.2.1', date: '2026-10-05', items: [
+    'Logos y avatares: se quitan los márgenes vacíos al subirlos y llenan el círculo de la página.'
+  ] },
   { version: '0.2.0', date: '2026-10-05', items: [
     'El panel vive en tu panel de control de Wix: códigos, empresas y tarjetas se guardan en tu sitio, no en el navegador.',
     'Escaneos reales desde oswaldozerega.com/q/ en el tablero y la analítica (país y ciudad llegan en la siguiente fase).',
@@ -1066,7 +1069,7 @@ async function miniatura(ref, maxLado, tipo) {
 
 
 const IMAGE_KINDS = {
-  logo: { max: 512, type: 'image/png' },
+  logo: { max: 512, type: 'image/png', round: true },
   icon: { max: 160, type: 'image/png' },
   cover: { max: 1600, type: 'image/jpeg', q: 0.82 },
   bg: { max: 1920, type: 'image/jpeg', q: 0.8 },
@@ -1090,6 +1093,41 @@ function orientationOf(d) {
   return 'cuadrada';
 }
 
+/* Logos y avatares: quita los márgenes vacíos (transparentes o del color de las esquinas) y devuelve
+   un cuadrado listo para mostrarse en círculo. Si el logo es casi cuadrado llena el círculo (se recortan
+   sus esquinas); si es alargado se centra para que quepa entero dentro del círculo. */
+function fitToCircle(img, ow, oh, max) {
+  const a = Math.min(1, 800 / Math.max(ow, oh));
+  const aw = Math.max(1, Math.round(ow * a)), ah = Math.max(1, Math.round(oh * a));
+  const probe = document.createElement('canvas');
+  probe.width = aw; probe.height = ah;
+  const pctx = probe.getContext('2d', { willReadFrequently: true });
+  pctx.drawImage(img, 0, 0, aw, ah);
+  const px = pctx.getImageData(0, 0, aw, ah).data;
+  const at = (x, y) => (y * aw + x) * 4;
+  const corners = [at(0, 0), at(aw - 1, 0), at(0, ah - 1), at(aw - 1, ah - 1)];
+  const transparent = corners.filter((i) => px[i + 3] < 32).length >= 2;
+  const bg = transparent ? null : [0, 1, 2].map((k) => corners.reduce((s, i) => s + px[i + k], 0) / 4);
+  const isContent = (i) => px[i + 3] >= 32 && (transparent || Math.abs(px[i] - bg[0]) + Math.abs(px[i + 1] - bg[1]) + Math.abs(px[i + 2] - bg[2]) > 60);
+  let x0 = aw, y0 = ah, x1 = -1, y1 = -1;
+  for (let y = 0; y < ah; y++) for (let x = 0; x < aw; x++) {
+    if (isContent(at(x, y))) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  }
+  if (x1 < 0) { x0 = 0; y0 = 0; x1 = aw - 1; y1 = ah - 1; }
+  const sx = x0 / a, sy = y0 / a, sw = (x1 - x0 + 1) / a, sh = (y1 - y0 + 1) / a;
+  const ratio = sw / sh;
+  const side = ratio > 0.8 && ratio < 1.25 ? Math.max(sw, sh) : Math.hypot(sw, sh) * 1.04;
+  const scale = Math.min(1, max / side);
+  const S = Math.max(1, Math.round(side * scale));
+  const out = document.createElement('canvas');
+  out.width = S; out.height = S;
+  const ctx = out.getContext('2d');
+  if (bg) { ctx.fillStyle = `rgb(${bg.map(Math.round).join(',')})`; ctx.fillRect(0, 0, S, S); }
+  const dw = sw * scale, dh = sh * scale;
+  ctx.drawImage(img, sx, sy, sw, sh, (S - dw) / 2, (S - dh) / 2, dw, dh);
+  return out;
+}
+
 /* Downscales uploads so a phone photo (4-8 MB) becomes ~100-250 KB before it is stored. Returns the original size too. */
 async function processImage(file, kind) {
   if (!file.type.startsWith('image/')) throw new Error('not-image');
@@ -1098,6 +1136,11 @@ async function processImage(file, kind) {
   try {
     const img = await new Promise((resolve, reject) => { const i = new Image(); i.onload = () => resolve(i); i.onerror = reject; i.src = url; });
     const ow = img.naturalWidth || 512, oh = img.naturalHeight || 512;
+    if (spec.round) {
+      const canvas = fitToCircle(img, ow, oh, spec.max);
+      const blob = await new Promise((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('encode'))), spec.type, spec.q));
+      return { blob, w: canvas.width, h: canvas.height, ow, oh };
+    }
     const scale = Math.min(1, spec.max / Math.max(ow, oh));
     const w = Math.max(1, Math.round(ow * scale)), h = Math.max(1, Math.round(oh * scale));
     const canvas = document.createElement('canvas');
