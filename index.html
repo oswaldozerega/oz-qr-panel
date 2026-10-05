@@ -637,7 +637,7 @@ const DEFAULT_SHORT_BASE = 'oswaldozerega.com/q/';
 
 const CHANGELOG = [
   { version: '0.3.0', date: '2026-10-05', items: [
-    'País, provincia y ciudad de cada escaneo (MaxMind GeoLite); la IP se borra apenas se ubica.',
+    'País de cada escaneo con IPinfo Lite (gratis y de uso comercial); la IP se borra apenas se ubica.',
     'Usuarios únicos reales: un mismo teléfono cuenta una vez por día, sin guardar datos personales.',
     'El botón «Actualizar» de la analítica ubica los escaneos pendientes y recarga los datos.'
   ] },
@@ -688,7 +688,7 @@ const CHANGELOG = [
 const ROADMAP = [
   { v: '0.1', t: 'Prototipo del panel', d: 'Diseño, flujo y generador funcional con datos locales.', s: 'done' },
   { v: '0.2', t: 'Conexión con Wix', d: 'Redirector en oswaldozerega.com/q/, escaneos reales, páginas de destino, archivos en Wix y panel privado.', s: 'done' },
-  { v: '0.3', t: 'Ubicación de los escaneos', d: 'País y ciudad de cada escaneo, usuarios únicos e informes con datos reales.', s: 'now' }
+  { v: '0.3', t: 'Ubicación de los escaneos', d: 'País de cada escaneo, usuarios únicos e informes con datos reales.', s: 'now' }
 ];
 
 const ICONS = {
@@ -1299,7 +1299,7 @@ async function recargarEscaneos() {
   const idPorSlug = new Map(state.codes.map((c) => [c.slug, c.id]));
   state.events = (filas || []).filter((f) => idPorSlug.has(f.slug)).map((f) => ({
     codeId: idPorSlug.get(f.slug), ts: new Date(f.fecha).getTime(), device: f.dispositivo || 'Otros',
-    country: f.pais || (f.ubicado ? 'Desconocido' : 'Por ubicar'), city: f.ciudad || (f.ubicado ? 'Desconocida' : 'Por ubicar'), region: f.region || '',
+    country: f.pais || (f.ubicado ? 'Desconocido' : 'Por ubicar'), city: f.ciudad || (f.ubicado ? '—' : 'Por ubicar'), region: f.region || '',
     visitor: f.visitante || ''
   }));
   scanCache.clear();
@@ -2978,7 +2978,7 @@ function renderAnalytics() {
         <button class="btn btn-primary" data-action="to-report">${icon('report')}Crear informe</button>
       </div>
     </header>
-    <p class="demo-note">${icon('info')}<span>Escaneos reales de tu sitio. El país y la ciudad se calculan cada hora (o al pulsar <b>Actualizar</b>); mientras tanto aparecen «Por ubicar». Un usuario único es un mismo teléfono en un mismo día.</span><button class="btn btn-sm" data-action="reload-scans" style="margin-left:auto">${icon('scan')}Actualizar</button></p>
+    <p class="demo-note">${icon('info')}<span>Escaneos reales de tu sitio. El país se calcula cada hora (o al pulsar <b>Actualizar</b>); mientras tanto aparece «Por ubicar». La ciudad requiere un servicio pagado y por ahora no se registra. Un usuario único es un mismo teléfono en un mismo día. Datos de ubicación: <a href="https://ipinfo.io" target="_blank" rel="noopener">IPinfo</a>.</span><button class="btn btn-sm" data-action="reload-scans" style="margin-left:auto">${icon('scan')}Actualizar</button></p>
     <div class="filters glass">
       <div class="field"><label for="an-target">Cliente o código</label><select class="input" id="an-target" data-an="target">${targetOptions(anFilter.target)}</select></div>
       <div class="field"><label for="an-days">Periodo</label><select class="input" id="an-days" data-an="days">${periodOptions(anFilter.days)}</select></div>
@@ -3220,7 +3220,7 @@ function buildReport() {
         <table class="rpt-table"><thead><tr><th>Código</th><th>Destino</th><th style="text-align:right">Actual</th><th style="text-align:right">Anterior</th><th style="text-align:right">Variación</th></tr></thead>
         <tbody>${a.perCode.slice(0, 14).map((p) => { const d = deltaInfo(p.cur, p.prev); return `<tr><td><b>${esc(p.code.title)}</b><br><span style="color:#586874">${esc(state.settings.shortBase + p.code.slug)}</span></td><td style="max-width:200px">${esc(destinationLabel(p.code).slice(0, 60))}</td><td style="text-align:right">${fmtN(p.cur)}</td><td style="text-align:right">${fmtN(p.prev)}</td><td style="text-align:right;color:${d.cls === 'up' ? '#18865B' : d.cls === 'down' ? '#C93C3C' : '#586874'};font-weight:700">${d.arrow}${d.text}</td></tr>`; }).join('') || '<tr><td colspan="5">Sin códigos dinámicos en esta selección</td></tr>'}</tbody></table></div>
       ${notes ? `<div class="rpt-card"><div class="rpt-title-sm">Comentarios</div><p class="rpt-notes">${esc(notes)}</p></div>` : ''}
-      <div class="rpt-card" style="font-size:10.5px;color:#586874;line-height:1.6"><b style="color:#15212A">Cómo leer este informe.</b> Un escaneo es cada vez que alguien abre el código. Los usuarios únicos cuentan a cada teléfono una sola vez por día. El periodo anterior tiene la misma duración y termina el día antes de que empiece el actual.${codes.some((c) => c.demo) ? ' <b style="color:#9A6A00">Este informe contiene datos de demostración.</b>' : ''}</div>
+      <div class="rpt-card" style="font-size:10.5px;color:#586874;line-height:1.6"><b style="color:#15212A">Cómo leer este informe.</b> Un escaneo es cada vez que alguien abre el código. Los usuarios únicos cuentan a cada teléfono una sola vez por día. El periodo anterior tiene la misma duración y termina el día antes de que empiece el actual. Ubicación por país: datos de IPinfo (ipinfo.io).${codes.some((c) => c.demo) ? ' <b style="color:#9A6A00">Este informe contiene datos de demostración.</b>' : ''}</div>
       ${foot(3)}
     </article>
   </div>`;
